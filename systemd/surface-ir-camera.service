@@ -1,0 +1,15 @@
+[Unit]
+Description=Surface Pro OV7251 IR camera bridge
+After=systemd-modules-load.service
+
+[Service]
+Type=simple
+ExecStartPre=/sbin/modprobe v4l2loopback
+ExecStartPre=/usr/local/bin/setup_ipu3.sh
+ExecStart=/usr/local/bin/surface-ir-bridge --min-brightness 0
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+
+[Install]
+WantedBy=multi-user.target
