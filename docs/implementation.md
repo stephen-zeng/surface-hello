@@ -83,6 +83,13 @@ difference was zero. This confirms a valid, stable passive stream under the
 current setup, but it is not an active/ambient result and says nothing about
 emitter state, depth, or liveness.
 
+A follow-up continuous-stream check captured 120 frames from `/dev/video42`.
+The output was exactly `36,864,000` bytes (`120 * 307,200`), with non-zero
+samples and no short-frame result. A separate GStreamer run consuming 120
+`GRAY8` frames also exited successfully. The loopback node accepts one active
+consumer at a time, so concurrent consumers can correctly report `Device busy`;
+the successful serial runs are the relevant result.
+
 The extracted 2016 Windows package gives a more specific software-side clue:
 `IntelCameraPlugin64.dll` identifies this module as `OV7251`, `MSHW0072`,
 `MONO IR` and exports `IAdvCIFlashControl`; `iacamera64.sys` contains
