@@ -59,11 +59,17 @@ The kernel exposes privacy LEDs, but no `ir_flood` LED or V4L2 flash control.
 Thus neither of these two GPIOs is evidence of an emitter control line.
 
 The DSDT also contains an `MSHW0085` device (`CWHD`) without a resource or
-control method in that device declaration. Its role is unverified. Identifying
-the actual illuminator requires evidence from the Windows camera driver,
-firmware tracing, or a hardware observation of the emitter during Hello.
-Until its control and frame timing are known, active/ambient frame pairs and
-depth cues cannot be produced or claimed by this bridge.
+control method in that device declaration. Microsoft's `Surface Camera Windows
+Hello` package for `ACPI\MSHW0085` (Update Catalog ID
+`c22078bc-ab45-43b6-bd98-670a700ac358`, driver version `1.0.45.0`) installs
+`FaceMF.Provider.dll` and registers
+`FaceMF.SourceProvider` as a face authentication source. The DLL has diagnostic
+strings for infrared frames and a missing *illumination attribute* in a frame
+sample. The package's INF specifies no emitter GPIO or I2C device, so it does
+not identify the hardware control path. This supports investigating the lower
+Windows camera driver and its frame metadata next. A Windows trace or direct
+emitter observation is still needed to establish control and timing before
+active/ambient frame pairs or depth cues can be produced by this bridge.
 
 ## Gaze configuration order
 
