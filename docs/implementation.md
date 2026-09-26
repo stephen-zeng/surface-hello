@@ -130,6 +130,33 @@ frames, zero new sequence anomalies, zero estimated missing frames and zero
 kernel-flagged error buffers. This completes the runbook's 120-frame passive
 CIO2/bridge check for that window, not an active IR or long-duration test.
 
+`surface-ir-capture` records packed CIO2 frames and the corresponding V4L2
+dequeue sequence, monotonic EOF timestamp, frame size, and SHA-256 in a local
+archive. It also snapshots OV7251 exposure/gain before capture; these are not
+per-frame control measurements. The capture pauses and restores the bridge
+only when `--stop-bridge` is given:
+
+```sh
+surface-ir-capture --mode passive --frames 120 --stop-bridge \
+  --out "$HOME/sp4-ir-debug/passive-$(date -u +%Y%m%dT%H%M%SZ)"
+```
+
+The output directory must be new and outside every Git worktree. It is mode
+`0700`, with raw files mode `0600`; partial output is removed on failure. The
+tool refuses `--mode active-pair` until a real emitter backend and illumination
+metadata exist. Its `passive-uncommanded` label never asserts that the emitter
+was physically off.
+
+On this machine a direct 120-frame run produced 47,923,200 bytes of `ip3y`
+(`120 * 399,360`), 120 distinct raw-frame hashes, contiguous source sequences
+1–120, and 120 monotonic timestamps. Intervals ranged from 32,826 to 33,904
+microseconds (30.002 fps from first to last), with a static control snapshot
+of exposure 1704 and analogue gain 512. Illumination remains `not_measured`.
+An invalid-device failure and SIGTERM during streaming both restored the
+bridge and left no archive. A controlled bridge process kill incremented
+systemd's restart count from 0 to 1; a new process then delivered 30 distinct
+GREY frames. This validates process recovery, not every possible input fault.
+
 The extracted 2016 Windows package gives a more specific software-side clue:
 `IntelCameraPlugin64.dll` identifies this module as `OV7251`, `MSHW0072`,
 `MONO IR` and exports `IAdvCIFlashControl`; `iacamera64.sys` contains

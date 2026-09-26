@@ -16,5 +16,6 @@ install: surface-ir-bridge
 	install -Dm755 scripts/setup_ipu3.sh /usr/local/bin/setup_ipu3.sh
 	install -Dm755 scripts/capture_ir_pair.sh /usr/local/bin/capture_ir_pair.sh
 	install -Dm755 scripts/check_ir_stream.py /usr/local/bin/check_ir_stream.py
+	install -Dm755 scripts/surface-ir-capture /usr/local/bin/surface-ir-capture
 	install -Dm644 systemd/surface-ir-camera.service /etc/systemd/system/surface-ir-camera.service
 	install -Dm644 modprobe.d/surface-ir.conf /etc/modprobe.d/surface-ir.conf

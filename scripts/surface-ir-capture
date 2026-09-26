@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Capture passive OV7251 CIO2 frames with source sequence and timestamps.
+
+No emitter is controlled. Active pairing needs a separately verified hardware
+backend and optical evidence; this program deliberately refuses that mode.
+"""
+
+import argparse
+import datetime
+import hashlib
+import json
+import mmap
+import os
+import pathlib
+import re
+import signal
+import subprocess
+import sys
+import tempfile
+
+
+SERVICE = "surface-ir-camera.service"
+RUNTIME_SOURCE = pathlib.Path("/run/surface_ir_bridge_dev")
+FRAME_RE = re.compile(
+    r"cap dqbuf:\s*\d+\s+seq:\s*(\d+)\s+bytesused:\s*(\d+)"
+    r"\s+ts:\s*(\d+)\.(\d+)(.*)"
+)
+
+
+class CaptureInterrupted(Exception):
+    """A signal must escape subprocess I/O retry loops."""
+
+
+def positive_int(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
+def run(command, *, timeout=15):
+    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(f"{' '.join(command)} failed: {detail}")
+    return result.stdout + result.stderr
+
+
+def capture(command, *, timeout):
+    process = subprocess.Popen(command, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except BaseException:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+        raise
+    if process.returncode:
+        raise RuntimeError(f"v4l2-ctl capture failed: {(stderr or stdout).strip()}")
+    return stdout + stderr
+
+
+def command_prefix():
+    return [] if os.geteuid() == 0 else ["sudo", "-n"]
+
+
+def output_in_git_tree(output):
+    probe = output.parent
+    while not probe.exists():
+        probe = probe.parent
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(probe), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0 and output.is_relative_to(
+        pathlib.Path(result.stdout.strip()).resolve()
+    )
+
+
+def source_format(device):
+    description = run(["v4l2-ctl", "-d", device, "--all"])
+    patterns = {
+        "dimensions": r"Width/Height\s*:\s*(\d+)/(\d+)",
+        "fourcc": r"Pixel Format\s*:\s*'([^']+)'",
+        "stride": r"Bytes per Line\s*:\s*(\d+)",
+        "frame_size": r"Size Image\s*:\s*(\d+)",
+    }
+    values = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, description)
+        if not match:
+            raise RuntimeError(f"cannot read source {key} from v4l2-ctl")
+        values[key] = match.groups() if key == "dimensions" else match.group(1)
+    width, height = map(int, values["dimensions"])
+    result = {"width": width, "height": height, "fourcc": values["fourcc"],
+              "stride": int(values["stride"]),
+              "frame_size": int(values["frame_size"])}
+    if (width, height, result["fourcc"], result["stride"], result["frame_size"]) != (
+        640, 480, "ip3y", 832, 399360
+    ):
+        raise RuntimeError(f"unexpected CIO2 source format: {result}")
+    return result, description
+
+
+def sensor_controls():
+    for subdevice in pathlib.Path("/sys/class/video4linux").glob("v4l-subdev*"):
+        name = subdevice / "name"
+        if name.is_file() and name.read_text().startswith("ov7251 "):
+            node = "/dev/" + subdevice.name
+            output = run(["v4l2-ctl", "-d", node,
+                          "--get-ctrl=exposure,analogue_gain"])
+            values = dict((key, int(value)) for key, value in
+                          re.findall(r"^(exposure|analogue_gain):\s*(\d+)$",
+                                     output, re.MULTILINE))
+            if set(values) != {"exposure", "analogue_gain"}:
+                raise RuntimeError(f"incomplete OV7251 control snapshot: {output}")
+            return {"device": node, **values}
+    raise RuntimeError("OV7251 sensor subdevice not found")
+
+
+def parse_frames(log, frame_count, frame_size):
+    records = []
+    for line in log.splitlines():
+        match = FRAME_RE.search(line)
+        if match:
+            sequence, bytes_used, seconds, fractional, details = match.groups()
+            timestamp_us = int(seconds) * 1000000 + int(
+                fractional[:6].ljust(6, "0")
+            )
+            records.append({"index": len(records), "sequence": int(sequence),
+                            "bytesused": int(bytes_used),
+                            "timestamp_monotonic_us": timestamp_us,
+                            "v4l2_dequeue_details": details.strip(),
+                            "illumination_state": "not_measured"})
+    if len(records) != frame_count:
+        raise RuntimeError(f"expected {frame_count} dequeue records, got {len(records)}")
+    for index, record in enumerate(records):
+        if record["bytesused"] != frame_size:
+            raise RuntimeError(f"short source frame at index {index}")
+        if index and record["sequence"] != records[index - 1]["sequence"] + 1:
+            raise RuntimeError(f"source sequence gap at index {index}")
+        if index and record["timestamp_monotonic_us"] <= records[index - 1]["timestamp_monotonic_us"]:
+            raise RuntimeError(f"nonmonotonic source timestamp at index {index}")
+    return records
+
+
+def interrupted(signum, _frame):
+    raise CaptureInterrupted(f"received signal {signum}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mode", choices=("passive", "active-pair"),
+                        default="passive")
+    parser.add_argument("--frames", type=positive_int, default=120)
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--device", help="CIO2 node (default: runtime discovery)")
+    parser.add_argument("--timeout", type=positive_int, default=30)
+    parser.add_argument("--stop-bridge", action="store_true",
+                        help="stop and restore the bridge around source capture")
+    args = parser.parse_args()
+    if args.mode != "passive":
+        parser.error("active-pair requires a verified emitter and frame metadata")
+
+    output = pathlib.Path(args.out).expanduser().resolve()
+    if output.exists():
+        parser.error(f"output already exists: {output}")
+    if output_in_git_tree(output):
+        parser.error("raw camera frames must be stored outside a Git worktree")
+    device = args.device or RUNTIME_SOURCE.read_text().strip()
+    os.umask(0o077)
+    output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+
+    old_term = signal.signal(signal.SIGTERM, interrupted)
+    bridge_active = subprocess.run(
+        ["systemctl", "is-active", "--quiet", SERVICE]
+    ).returncode == 0
+    if bridge_active and not args.stop_bridge:
+        parser.error(f"{SERVICE} owns {device}; pass --stop-bridge")
+
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix=".surface-ir-capture-", dir=output.parent
+        ) as scratch_name:
+            scratch = pathlib.Path(scratch_name)
+            restore_bridge = bridge_active and args.stop_bridge
+            try:
+                if restore_bridge:
+                    run(command_prefix() + ["systemctl", "stop", SERVICE])
+                fmt, format_text = source_format(device)
+                controls = sensor_controls()
+                raw = scratch / "frames.ip3y"
+                command = ["v4l2-ctl", "-d", device, "--verbose",
+                           "--stream-mmap", f"--stream-count={args.frames}",
+                           f"--stream-to={raw}"]
+                log = capture(command, timeout=args.timeout)
+                records = parse_frames(log, args.frames, fmt["frame_size"])
+                expected = args.frames * fmt["frame_size"]
+                if raw.stat().st_size != expected:
+                    raise RuntimeError(f"expected {expected} raw bytes, got {raw.stat().st_size}")
+                with raw.open("rb") as stream, mmap.mmap(
+                    stream.fileno(), 0, access=mmap.ACCESS_READ
+                ) as payload:
+                    for record in records:
+                        start = record["index"] * fmt["frame_size"]
+                        frame = payload[start:start + fmt["frame_size"]]
+                        record["sha256"] = hashlib.sha256(frame).hexdigest()
+                (scratch / "metadata.jsonl").write_text(
+                    "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
+                )
+                (scratch / "v4l2-ctl.log").write_text(log)
+                (scratch / "source-format.txt").write_text(format_text)
+                intervals = [current["timestamp_monotonic_us"] - previous["timestamp_monotonic_us"]
+                             for previous, current in zip(records, records[1:])]
+                summary = {
+                    "mode": "passive-uncommanded",
+                    "created_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "device": device,
+                    "source_format": fmt,
+                    "controls_snapshot_not_per_frame": controls,
+                    "frames": args.frames,
+                    "bytes": expected,
+                    "first_sequence": records[0]["sequence"],
+                    "last_sequence": records[-1]["sequence"],
+                    "unique_frame_hashes": len({item["sha256"] for item in records}),
+                    "interval_us_min": min(intervals) if intervals else None,
+                    "interval_us_max": max(intervals) if intervals else None,
+                    "fps_from_timestamps": round(
+                        (len(records) - 1) * 1000000 / sum(intervals), 3
+                    ) if intervals else None,
+                    "illumination_state": "not_measured",
+                    "depth_or_pad_verified": False,
+                }
+                (scratch / "manifest.json").write_text(
+                    json.dumps(summary, indent=2, sort_keys=True) + "\n"
+                )
+            finally:
+                if restore_bridge:
+                    run(command_prefix() + ["systemctl", "start", SERVICE])
+                    run(["systemctl", "is-active", "--quiet", SERVICE])
+            scratch.rename(output)
+    finally:
+        signal.signal(signal.SIGTERM, old_term)
+
+    print(json.dumps({"output": str(output), **summary}, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError, subprocess.TimeoutExpired,
+            CaptureInterrupted, KeyboardInterrupt) as error:
+        print(f"surface-ir-capture: {error}", file=sys.stderr)
+        sys.exit(1)
