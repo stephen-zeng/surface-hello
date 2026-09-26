@@ -85,6 +85,16 @@ no corresponding flash control. The next investigation is to identify the
 Windows driver's actual trigger and frame metadata behavior before adding a
 Linux emitter backend.
 
+Additional upstream evidence is available in linux-surface issue #739
+(`cameras/ov7251: Register dump for strobe`). The dump was captured from
+Windows on a Surface Book 2, not this Surface Pro 4, and the discussion says
+the sensor strobe can trigger an IR LED on that platform only while streaming.
+It also notes a separate TPS68470 flash/torch timeout and possible `S_STROBE`
+trigger. The issue is useful for identifying the OV7251 strobe block, but it is
+not a safe register recipe for this machine: the Pro 4's ACPI resources and
+illumination controller have not been matched to it. No register writes are
+made by this project.
+
 ## Gaze configuration order
 
 First validate RGB enrollment and `gaze auth`. Then make a timestamped backup
