@@ -47,6 +47,18 @@ The setup script applies the OV7251 driver's advertised maximum exposure and
 a conservative analogue gain (`1704` and `512`); adjust them with `v4l2-ctl`
 if a different lighting environment needs it.
 
+To save two frames for inspection, install `capture_ir_pair.sh` and run:
+
+```sh
+sudo capture_ir_pair.sh --output ~/sp4-ir-debug
+```
+
+This produces two PGM frames and an absolute-difference image. They are
+labelled `consecutive` because no emitter control is assumed. Once a verified
+hardware control command exists, pass both `--on-command` and `--off-command`
+to capture an active/ambient pair; the script still reports only image
+difference and does not interpret it as depth or liveness.
+
 ## IR emitter investigation
 
 On this Surface Pro 4, the DSDT identifies the OV7251 as `INT347E`/`CAM3` at
