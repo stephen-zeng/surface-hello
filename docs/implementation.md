@@ -93,6 +93,31 @@ samples and no short-frame result. A separate GStreamer run consuming 120
 consumer at a time, so concurrent consumers can correctly report `Device busy`;
 the successful serial runs are the relevant result.
 
+The bridge can report cumulative CIO2 source statistics without changing the
+stream. Send `SIGUSR1` to its systemd `MainPID` before and after a capture:
+
+```sh
+pid=$(systemctl show -P MainPID surface-ir-camera.service)
+sudo kill -USR1 "$pid"
+gst-launch-1.0 -q v4l2src device=/dev/video42 num-buffers=120 \
+  ! video/x-raw,format=GRAY8,width=640,height=480 ! fakesink
+sudo kill -USR1 "$pid"
+sudo journalctl -u surface-ir-camera.service -b --no-pager | grep 'stats input='
+```
+
+Each stats line reports source frames dequeued, GREY frames written, brightness
+filtered frames, sequence anomalies, estimated missing sequence numbers,
+kernel-flagged error buffers, and the last source sequence/timestamp. The
+missing count is an estimate based on forward sequence gaps; it does not claim
+anything about emitter timing. `--debug` additionally prints each source
+sequence, timestamp, flags and sampled brightness.
+
+In one 120-frame GStreamer validation window, the source counters advanced
+from `input=468 output=468` to `input=594 output=594`: 126 input and output
+frames, zero new sequence anomalies, zero estimated missing frames and zero
+kernel-flagged error buffers. This completes the runbook's 120-frame passive
+CIO2/bridge check for that window, not an active IR or long-duration test.
+
 The extracted 2016 Windows package gives a more specific software-side clue:
 `IntelCameraPlugin64.dll` identifies this module as `OV7251`, `MSHW0072`,
 `MONO IR` and exports `IAdvCIFlashControl`; `iacamera64.sys` contains

@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdint.h>
@@ -26,6 +27,19 @@
 #define PACKED_STRIDE (((WIDTH + 24) / 25) * 32)
 
 static volatile sig_atomic_t running = 1;
+static volatile sig_atomic_t stats_requested = 0;
+
+struct bridge_stats {
+    uint64_t input_frames;
+    uint64_t output_frames;
+    uint64_t filtered_frames;
+    uint64_t sequence_anomalies;
+    uint64_t estimated_missing;
+    uint64_t flagged_errors;
+    uint32_t last_sequence;
+    struct timeval last_timestamp;
+    int has_last_sequence;
+};
 
 struct mapped_buffer {
     void *addr;
@@ -37,11 +51,30 @@ static void stop_handler(int signal_number) {
     running = 0;
 }
 
+static void stats_handler(int signal_number) {
+    (void)signal_number;
+    stats_requested = 1;
+}
+
+static void print_stats(const struct bridge_stats *stats) {
+    fprintf(stderr,
+            "surface-ir-bridge: stats input=%" PRIu64 " output=%" PRIu64
+            " filtered=%" PRIu64 " sequence_anomalies=%" PRIu64
+            " estimated_missing=%" PRIu64 " flagged_errors=%" PRIu64
+            " last_sequence=%u last_timestamp=%lld.%06ld\n",
+            stats->input_frames, stats->output_frames, stats->filtered_frames,
+            stats->sequence_anomalies, stats->estimated_missing,
+            stats->flagged_errors, stats->last_sequence,
+            (long long)stats->last_timestamp.tv_sec,
+            (long)stats->last_timestamp.tv_usec);
+}
+
 static void usage(const char *program) {
     fprintf(stderr,
             "Usage: %s [--input PATH] [--output PATH] [--min-brightness N]\n"
             "       %s [--debug]\n\n"
-            "Reads IPU3 ip3y (10-bit packed) and writes GREY frames.\n",
+            "Reads IPU3 ip3y (10-bit packed) and writes GREY frames.\n"
+            "Send SIGUSR1 to print cumulative source-frame statistics.\n",
             program, program);
 }
 
@@ -170,6 +203,7 @@ int main(int argc, char **argv) {
 
     signal(SIGINT, stop_handler);
     signal(SIGTERM, stop_handler);
+    signal(SIGUSR1, stats_handler);
 
     int in_fd = open_v4l2(input, V4L2_CAP_VIDEO_CAPTURE_MPLANE | V4L2_CAP_STREAMING,
                           O_RDWR);
@@ -275,7 +309,12 @@ int main(int argc, char **argv) {
             output, stride, debug ? " (debug)" : "");
 
     int status = 0;
+    struct bridge_stats stats = {0};
     while (running) {
+        if (stats_requested) {
+            stats_requested = 0;
+            print_stats(&stats);
+        }
         struct pollfd pollfd = {.fd = in_fd, .events = POLLIN};
         int ready = poll(&pollfd, 1, 3000);
         if (ready < 0 && errno == EINTR)
@@ -310,18 +349,40 @@ int main(int argc, char **argv) {
             status = 1;
             break;
         }
+        ++stats.input_frames;
+        if (stats.has_last_sequence) {
+            uint32_t expected = stats.last_sequence + 1;
+            if (buffer.sequence != expected) {
+                ++stats.sequence_anomalies;
+                uint32_t delta = buffer.sequence - expected;
+                if (delta < 0x80000000u)
+                    stats.estimated_missing += delta;
+            }
+        }
+        stats.last_sequence = buffer.sequence;
+        stats.last_timestamp = buffer.timestamp;
+        stats.has_last_sequence = 1;
+        if (buffer.flags & V4L2_BUF_FLAG_ERROR)
+            ++stats.flagged_errors;
         const uint8_t *packed = (const uint8_t *)buffers[buffer.index].addr +
                                 plane.data_offset;
         for (unsigned y = 0; y < HEIGHT; ++y)
             unpack_line(packed + y * stride, frame + y * WIDTH, stride);
         int brightness = frame_brightness(frame, WIDTH * HEIGHT);
         if (debug)
-            fprintf(stderr, "surface-ir-bridge: frame=%u brightness=%d\n",
-                    buffer.sequence, brightness);
-        if (brightness >= min_brightness && write_full(out_fd, frame, WIDTH * HEIGHT) < 0) {
-            perror("surface-ir-bridge: loopback write");
-            status = 1;
-            break;
+            fprintf(stderr,
+                    "surface-ir-bridge: frame=%u timestamp=%lld.%06ld flags=0x%08x brightness=%d\n",
+                    buffer.sequence, (long long)buffer.timestamp.tv_sec,
+                    (long)buffer.timestamp.tv_usec, buffer.flags, brightness);
+        if (brightness >= min_brightness) {
+            if (write_full(out_fd, frame, WIDTH * HEIGHT) < 0) {
+                perror("surface-ir-bridge: loopback write");
+                status = 1;
+                break;
+            }
+            ++stats.output_frames;
+        } else {
+            ++stats.filtered_frames;
         }
         if (ioctl(in_fd, VIDIOC_QBUF, &buffer) < 0) {
             perror("surface-ir-bridge: QBUF");
@@ -329,6 +390,8 @@ int main(int argc, char **argv) {
             break;
         }
     }
+    if (debug || stats_requested)
+        print_stats(&stats);
     free(frame);
     ioctl(in_fd, VIDIOC_STREAMOFF, &type);
     for (unsigned i = 0; i < request.count; ++i)
