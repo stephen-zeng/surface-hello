@@ -213,9 +213,15 @@ frame size on `/dev/video42`. `capture_ir_pair.sh` successfully saved two
 consecutive frames and a PGM absolute-difference image; the observed
 difference was zero while no emitter command was supplied.
 
-`gaze doctor` completed with 22 passed, 1 optional feature off, 2 warnings,
-and 0 errors. The warnings were expected while enrollment is deferred: the
+`gaze doctor --benchmark` completed with 26 passed, 1 optional feature off, 2
+warnings, and 0 errors. The warnings were expected while enrollment is deferred: the
 GNOME extension is installed but not enabled, and no faces are enrolled. The
 TPM, daemon, PAM installation, camera nodes, and encrypted-template setting
 were all accepted by the doctor. Interactive enrollment and authentication
 remain intentionally unperformed.
+
+The benchmark measured the local inference path on CPU: face detector 6.7 ms
+average, RGB recognizer 12.0 ms, IR recognizer 11.4 ms, and MiniFASNet
+liveness 2.7 ms. These timings verify that software recognition and passive
+software liveness are usable; they do not verify enrollment, active IR
+illumination, depth, or Windows Hello equivalence.
