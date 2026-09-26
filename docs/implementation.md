@@ -59,6 +59,30 @@ hardware control command exists, pass both `--on-command` and `--off-command`
 to capture an active/ambient pair; the script still reports only image
 difference and does not interpret it as depth or liveness.
 
+## Safe strobe investigation status (2026-09-26)
+
+The upstream Linux `ov7251.c` mode tables initialise registers in the
+`0x3b80`--`0x3b96` range, which is useful evidence that the sensor has a
+strobe-related register block. The same driver exposes only exposure, gain,
+blanking, flip, test-pattern, link-frequency and pixel-rate controls. It does
+not expose a V4L2 flash/strobe control or an emitter backend. The live OV7251
+subdevice likewise reports only `MEDIA_BUS_FMT_Y10_1X10` and those image
+controls.
+
+`i2c-tools` is installed for read-only investigation. A root probe of
+`i2c-3`, address `0x60`, register `0x3b80` was refused with `Device or
+resource busy` because the kernel sensor driver owns the device. The probe did
+not use `-f`, did not stop the camera service, and performed no write. This
+means the register values remain unverified on this machine; the project must
+not turn the upstream mode-table values or another Surface model's dump into a
+write sequence.
+
+The latest passive capture produced two `640x480` GREY frames with payload
+statistics of min `0`, max `255`, mean `48.759` for both frames. Their absolute
+difference was zero. This confirms a valid, stable passive stream under the
+current setup, but it is not an active/ambient result and says nothing about
+emitter state, depth, or liveness.
+
 ## IR emitter investigation
 
 On this Surface Pro 4, the DSDT identifies the OV7251 as `INT347E`/`CAM3` at
