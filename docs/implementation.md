@@ -47,6 +47,24 @@ The setup script applies the OV7251 driver's advertised maximum exposure and
 a conservative analogue gain (`1704` and `512`); adjust them with `v4l2-ctl`
 if a different lighting environment needs it.
 
+## IR emitter investigation
+
+On this Surface Pro 4, the DSDT identifies the OV7251 as `INT347E`/`CAM3` at
+I2C address `0x60`. Its `INT3472` dependency (`SKC2`) lists two GPIO resources:
+pin `0x4f` has function `0x0c` (clock enable), and pin `0x50` has function
+`0x00` (reset). These function codes match the Linux INT3472 driver's GPIO
+type mapping. None of the twelve static and dynamic SSDTs adds a camera or
+emitter definition.
+The kernel exposes privacy LEDs, but no `ir_flood` LED or V4L2 flash control.
+Thus neither of these two GPIOs is evidence of an emitter control line.
+
+The DSDT also contains an `MSHW0085` device (`CWHD`) without a resource or
+control method in that device declaration. Its role is unverified. Identifying
+the actual illuminator requires evidence from the Windows camera driver,
+firmware tracing, or a hardware observation of the emitter during Hello.
+Until its control and frame timing are known, active/ambient frame pairs and
+depth cues cannot be produced or claimed by this bridge.
+
 ## Gaze configuration order
 
 First validate RGB enrollment and `gaze auth`. Then make a timestamped backup
