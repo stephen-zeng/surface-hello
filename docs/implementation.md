@@ -228,6 +228,10 @@ TPM, daemon, PAM installation, camera nodes, and encrypted-template setting
 were all accepted by the doctor. Interactive enrollment and authentication
 remain intentionally unperformed.
 
+Running `gaze auth --verbose --user stephenzeng` without enrollment exits
+cleanly with `No faces enrolled`; it does not alter the camera service or
+configuration. PAM/GDM fallback remains untested until a face is enrolled.
+
 The benchmark measured the local inference path on CPU: face detector 6.7 ms
 average, RGB recognizer 12.0 ms, IR recognizer 11.4 ms, and MiniFASNet
 liveness 2.7 ms. These timings verify that the model components are usable;
