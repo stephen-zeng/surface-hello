@@ -461,3 +461,20 @@ and 0 errors; CPU means were 6.6 ms for detection, 9.1 ms for RGB recognition,
 is unconfirmed. Gaze's libcamera enumeration also logs a media-link `Device
 or resource busy` while this bridge owns the OV7251 link, although its doctor
 checks and the independent 120-frame GREY capture succeed.
+
+## Current status recheck (2026-09-26 23:46 +08)
+
+The bridge and `gazed` services are both active with zero current systemd
+restarts. `gaze doctor` reports 22 passed, 1 optional feature off, 2 warnings,
+and 0 errors; the warnings remain the disabled GNOME extension and deferred
+enrollment. A direct `gaze auth --verbose --user stephenzeng` exits with code 1
+and `No faces enrolled`, without changing the service or configuration.
+
+The live configuration still points IR at `/dev/video42`, leaves
+`emitter_enabled = false`, enables encrypted templates, and leaves GNOME
+Keyring unlock off. `/var/lib/gaze/tpm` is root-owned mode `0700`; `dek.pub`
+and `dek.priv` are root-owned mode `0600`. The TPM is Infineon SLB9665 and
+reports TPM 2.0. `gazed` logs `Template encryption enabled (AES-256-GCM under a
+TPM-sealed key)` after its current start. This confirms daemon initialization
+and key-material permissions, but not encrypted user-template storage,
+recovery after TPM replacement, or face authentication.
