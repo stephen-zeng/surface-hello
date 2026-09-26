@@ -93,6 +93,18 @@ samples and no short-frame result. A separate GStreamer run consuming 120
 consumer at a time, so concurrent consumers can correctly report `Device busy`;
 the successful serial runs are the relevant result.
 
+Run `python3 scripts/check_ir_stream.py --frames 120` to check that the
+loopback payload changes as well as having the expected byte count. It captures
+to a temporary file that is deleted on exit and prints JSON with frame hashes,
+brightness range, and changed-pixel counts. Two runs on this machine each
+produced 120 distinct frame hashes out of 120. In the second run, consecutive
+frames differed in 274,709–275,556 pixels out of 307,200; mean brightness
+ranged from 10.288 to 10.418 under the then-current lighting. This guards
+against an exactly repeated loopback payload in those windows, not replay,
+face motion, active illumination, or liveness. A source-side `SIGUSR1` check
+during the first run showed `input/output` increasing from 17,448 to 17,567,
+with no new sequence anomaly, estimated missing frame, or flagged error.
+
 The bridge can report cumulative CIO2 source statistics without changing the
 stream. Send `SIGUSR1` to its systemd `MainPID` before and after a capture:
 
