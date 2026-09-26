@@ -227,6 +227,27 @@ no corresponding flash control. The next investigation is to identify the
 Windows driver's actual trigger and frame metadata behavior before adding a
 Linux emitter backend.
 
+Microsoft's Windows Hello camera driver guide defines two mutually exclusive
+FaceAuth modes: alternating illuminated/ambient frames, or a driver-produced
+ambient-subtracted frame. `MF_CAPTURE_METADATA_FRAME_ILLUMINATION` marks each
+frame in the alternating mode. The actual mode used by this Surface Pro 4 has
+not been observed. A Windows runtime trace must identify its
+`KSPROPERTY_CAMERACONTROL_EXTENDED_FACEAUTH_MODE` setting and, if alternating,
+compare illumination metadata with an optical measurement before a Linux
+capture path claims matched active/ambient pairs. See the Microsoft
+[bring-up guide](https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/windows-hello-camera-driver-bring-up-guide)
+and [FaceAuth mode property](https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/ksproperty-cameracontrol-extended-faceauth-mode).
+The guide's minimum is 15 illuminated plus 15 ambient frames per second for
+alternating mode, or 15 ambient-subtracted frames per second, at 320x320 or
+better. The present approximately 30 fps passive GREY stream is not evidence
+that either active mode meets this target.
+
+The reference machine's current internal disk has only Debian EFI, ext4, and
+swap partitions. Its firmware still lists a Windows Boot Manager entry, but
+there is no Windows system partition available for a Hello runtime trace in
+this session. Static INF and binary inspection cannot establish the emitted
+light waveform or its frame association.
+
 Static strings in the same package provide a narrower clue: `ov7251.sys`
 contains the sensor-side modes `Strobe`, `Torch`, and `Flash`, while
 `SkcController.sys` contains `TPS68470` flash methods for both strobe and I2C
@@ -245,6 +266,13 @@ camera pipeline. The package still contains no Surface-Pro-4-specific binding
 from that proxy to an emitter, so it is not enough to implement a Linux
 backend.
 
+The package's `OV7251_MSHW0072_SKY_pipeCfg.bin` and generic
+`OV7251_5SF010T2_SKY_pipeCfg.bin` are byte-identical (7,264 bytes, SHA-256
+`f70c8d3d4a85fd76b7a90b6ec9e9faa36dd56a068ccdf71b11d2daffa8d04a28`).
+The two `.cpf` files differ, but their undocumented binary contents have not
+been mapped to an emitter. The matching pipeline files supply no
+Surface-specific control sequence.
+
 Additional upstream evidence is available in linux-surface issue #739
 (`cameras/ov7251: Register dump for strobe`). The dump was captured from
 Windows on a Surface Book 2, not this Surface Pro 4, and the discussion says
@@ -257,8 +285,9 @@ made by this project.
 
 ## Gaze configuration order
 
-First validate RGB enrollment and `gaze auth`. Then make a timestamped backup
-of `/etc/gaze/config.toml` and set:
+Enrollment is deferred by the user. Validate the camera and daemon with
+`gaze doctor`, then make a timestamped backup of `/etc/gaze/config.toml` and
+set:
 
 ```toml
 [cameras]
@@ -268,9 +297,10 @@ emitter_enabled = false
 parallel_capture = "never"
 ```
 
-Restart `gazed`, run `gaze doctor`, and inspect `journalctl -u gazed`. Do not
-enable PAM, GDM, or the GNOME extension until interactive authentication and
-TTY/password fallback have both been tested.
+Restart `gazed`, run `gaze doctor`, and inspect `journalctl -u gazed`. Perform
+enrollment and `gaze auth` only when the user opts in. Existing PAM/GDM entries
+are installation state, not an authentication test; do not expand them until
+interactive authentication and TTY/password fallback have both been tested.
 
 On the reference machine, `gaze doctor --benchmark` runs the detector, RGB and
 IR recognizers, and MiniFASNet liveness model successfully on CPU. This proves
