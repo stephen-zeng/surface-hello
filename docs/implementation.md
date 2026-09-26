@@ -230,6 +230,7 @@ remain intentionally unperformed.
 
 The benchmark measured the local inference path on CPU: face detector 6.7 ms
 average, RGB recognizer 12.0 ms, IR recognizer 11.4 ms, and MiniFASNet
-liveness 2.7 ms. These timings verify that software recognition and passive
-software liveness are usable; they do not verify enrollment, active IR
+liveness 2.7 ms. These timings verify that the model components are usable;
+Gaze's current IR authentication path uses eye-motion liveness rather than
+the RGB MiniFASNet model. They do not verify enrollment, active IR
 illumination, depth, or Windows Hello equivalence.
