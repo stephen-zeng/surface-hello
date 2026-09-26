@@ -156,3 +156,18 @@ and a root recovery path before enabling this setting.
 `unlock_gnome_keyring = true` is a separate opt-in. It requires encrypted
 templates, liveness, and `sudo gaze keyring`; enable it only after face auth
 works reliably and the keyring password has been enrolled interactively.
+
+## Verification on the reference Surface Pro 4
+
+On 2026-09-26 the installed service was active and reported `/dev/video2` as
+the current CIO2 input. The bridge exposed 640x480 `GREY` with a 307200-byte
+frame size on `/dev/video42`. `capture_ir_pair.sh` successfully saved two
+consecutive frames and a PGM absolute-difference image; the observed
+difference was zero while no emitter command was supplied.
+
+`gaze doctor` completed with 22 passed, 1 optional feature off, 2 warnings,
+and 0 errors. The warnings were expected while enrollment is deferred: the
+GNOME extension is installed but not enabled, and no faces are enrolled. The
+TPM, daemon, PAM installation, camera nodes, and encrypted-template setting
+were all accepted by the doctor. Interactive enrollment and authentication
+remain intentionally unperformed.
