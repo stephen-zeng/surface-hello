@@ -56,7 +56,10 @@ sudo capture_ir_pair.sh --output ~/sp4-ir-debug
 This produces two PGM frames and an absolute-difference image. They are
 labelled `consecutive` because no emitter control is assumed. Once a verified
 hardware control command exists, pass both `--on-command` and `--off-command`
-to capture an active/ambient pair; the script still reports only image
+to request on/off states around two captures. The script attempts the off
+command on any exit after the on command starts, including capture failure or
+a handled signal. Its `commanded-on-off` label records requested states, not
+measured illumination or frame synchronization; it reports only image
 difference and does not interpret it as depth or liveness.
 
 ## Safe strobe investigation status (2026-09-26)
@@ -97,7 +100,7 @@ The extracted 2016 Windows package gives a more specific software-side clue:
 metadata paths. This supports the model of a separate flash controller plus
 illumination metadata carried through the camera pipeline. It still does not
 identify the Pro 4 emitter's GPIO, I2C device, or sensor-strobe wiring:
-`SkcController.inf` only binds the generic `ACPI\\INT3472` controller, and no
+`SkcController.inf` only binds the generic `ACPI\INT3472` controller, and no
 Surface-specific flash resource is present in the package. These strings are
 therefore implementation clues, not a Linux control recipe.
 
@@ -288,3 +291,32 @@ liveness 2.7 ms. These timings verify that the model components are usable;
 Gaze's current IR authentication path uses eye-motion liveness rather than
 the RGB MiniFASNet model. They do not verify enrollment, active IR
 illumination, depth, or Windows Hello equivalence.
+
+## Current Gaze and login integration status (2026-09-26)
+
+The installed Gaze 0.3.3 configuration has `ir = "/dev/video42"`,
+`emitter_enabled = false`, `encrypt_templates = true`, liveness enabled, and
+GNOME Keyring unlock disabled. After restarting `gazed`, its journal reported
+"Template encryption enabled (AES-256-GCM under a TPM-sealed key)". This
+confirms the daemon initialised TPM-backed encryption; there is no enrolled
+face template yet, so encrypted-template storage and recovery have not been
+tested with user data.
+
+The current installation references `pam_gaze.so` in `common-auth`, a direct
+`polkit-1` entry, and `gdm-face`; GDM's dconf override requests face
+authentication. `common-auth` still includes `pam_unix.so` after Gaze, but
+actual password, TTY, and GDM fallback have not been exercised interactively.
+The GNOME extension files are installed, while the current Shell session does
+not list or enable the extension. These existing settings are installation
+state, not proof of a working face login. No further PAM/GDM changes or face
+enrollment are part of this validation.
+
+One `gaze doctor --benchmark` invocation reported a 30-second benchmark
+timeout while the daemon remained active. A plain `gaze doctor` still reported
+22 passed, 1 optional feature off, 2 warnings, and 0 errors. After a `gazed`
+restart, an isolated benchmark completed with 26 passed, 1 off, 2 warnings,
+and 0 errors; CPU means were 6.6 ms for detection, 9.1 ms for RGB recognition,
+9.9 ms for IR recognition, and 4.0 ms for MiniFASNet. The timeout's root cause
+is unconfirmed. Gaze's libcamera enumeration also logs a media-link `Device
+or resource busy` while this bridge owns the OV7251 link, although its doctor
+checks and the independent 120-frame GREY capture succeed.
