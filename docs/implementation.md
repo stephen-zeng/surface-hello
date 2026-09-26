@@ -64,6 +64,11 @@ Restart `gazed`, run `gaze doctor`, and inspect `journalctl -u gazed`. Do not
 enable PAM, GDM, or the GNOME extension until interactive authentication and
 TTY/password fallback have both been tested.
 
+On the reference machine, `gaze doctor --benchmark` runs the detector, RGB and
+IR recognizers, and MiniFASNet liveness model successfully on CPU. This proves
+the inference path is usable; it does not replace a real enrollment and
+`gaze auth` test in front of the camera.
+
 The released Gaze package supplies RGB MiniFASNet liveness and an IR camera
 input, but it has no depth stream API. The OV7251 is a single monochrome
 camera and this Surface exposes no verified depth or IR torch device. The
