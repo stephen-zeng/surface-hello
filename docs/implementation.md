@@ -176,6 +176,28 @@ sensor must be streaming for the strobe-related access to work. None of these
 observations identifies the Pro 4 wiring, so they remain comparative evidence
 only.
 
+## Read-only Windows register-table analysis (2026-09-26)
+
+The extracted `ov7251.sys` was inspected without loading it or sending any
+device commands. Four repeated 137-record tables use a 16-byte record layout
+with a register address and an 8-bit value. Each table contains the contiguous
+`0x3b80`--`0x3b8f` and `0x3b94`--`0x3b96` ranges. The first two tables are
+identical; the latter two change several mode values, including `0x3b81`,
+`0x3b8b`, `0x3b8e`, `0x3b8f`, and `0x3b96`.
+
+This is stronger evidence that the Windows package carries multiple OV7251
+strobe-related sensor mode tables. It is still only static evidence: the file
+does not identify which table the Pro 4 selects at runtime, whether the sensor
+strobe is wired to an LED on this platform, or what frame metadata accompanies
+it. No value from these tables is used by the Linux bridge, and no register
+write is permitted based on this analysis.
+
+The bridge unpacker was also checked with an independent synthetic packer for
+all 640 ten-bit pixel positions, including the 25-pixel group boundary. Every
+decoded byte matched `value >> 2` (maximum error zero). This validates the
+bit-layout test path; it does not establish that every reserved/padding bit in
+a live CIO2 frame has a particular value.
+
 ## IR emitter investigation
 
 On this Surface Pro 4, the DSDT identifies the OV7251 as `INT347E`/`CAM3` at
