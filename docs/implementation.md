@@ -185,6 +185,14 @@ not claim Windows Hello structured-light depth or active-IR anti-spoofing.
 That requires a verified emitter backend and calibration, followed by Gaze
 support for an active response/depth signal.
 
+Gaze's emitter blaster is also specifically a UVC path: it resolves a USB
+camera, probes the Microsoft Face Authentication extension-unit control, and
+uses a built-in VID:PID/profile table. The Surface OV7251 is an I2C/IPU3
+sensor, and the `/dev/video42` loopback node has no extension-unit controls;
+`v4l2-ctl --list-ctrls` shows only loopback queue controls. Setting
+`emitter_enabled = true` therefore cannot control this camera without adding a
+separate, hardware-specific backend.
+
 ## TPM protected storage
 
 The Surface TPM is TPM 2.0 (`/dev/tpmrm0`, Infineon SLB9665). Debian's
