@@ -83,6 +83,17 @@ difference was zero. This confirms a valid, stable passive stream under the
 current setup, but it is not an active/ambient result and says nothing about
 emitter state, depth, or liveness.
 
+The extracted 2016 Windows package gives a more specific software-side clue:
+`IntelCameraPlugin64.dll` identifies this module as `OV7251`, `MSHW0072`,
+`MONO IR` and exports `IAdvCIFlashControl`; `iacamera64.sys` contains
+`IsFlashTriggered`, `GetFrameFlashStage` and `IsFrameIlluminated` input-frame
+metadata paths. This supports the model of a separate flash controller plus
+illumination metadata carried through the camera pipeline. It still does not
+identify the Pro 4 emitter's GPIO, I2C device, or sensor-strobe wiring:
+`SkcController.inf` only binds the generic `ACPI\\INT3472` controller, and no
+Surface-specific flash resource is present in the package. These strings are
+therefore implementation clues, not a Linux control recipe.
+
 ## IR emitter investigation
 
 On this Surface Pro 4, the DSDT identifies the OV7251 as `INT347E`/`CAM3` at
