@@ -43,6 +43,9 @@ gst-launch-1.0 -q v4l2src device=/dev/video42 num-buffers=1 \
 The bridge converts IPU3 packed 10-bit monochrome to 8-bit `GREY`. It does
 not write OV7251 registers or GPIOs: this machine has no verified Linux IR
 emitter control endpoint. `emitter_enabled` must therefore remain `false`.
+The setup script applies the OV7251 driver's advertised maximum exposure and
+a conservative analogue gain (`1704` and `512`); adjust them with `v4l2-ctl`
+if a different lighting environment needs it.
 
 ## Gaze configuration order
 
@@ -60,6 +63,14 @@ parallel_capture = "never"
 Restart `gazed`, run `gaze doctor`, and inspect `journalctl -u gazed`. Do not
 enable PAM, GDM, or the GNOME extension until interactive authentication and
 TTY/password fallback have both been tested.
+
+The released Gaze package supplies RGB MiniFASNet liveness and an IR camera
+input, but it has no depth stream API. The OV7251 is a single monochrome
+camera and this Surface exposes no verified depth or IR torch device. The
+current configuration is therefore passive IR plus software liveness; it does
+not claim Windows Hello structured-light depth or active-IR anti-spoofing.
+That requires a verified emitter backend and calibration, followed by Gaze
+support for an active response/depth signal.
 
 ## TPM protected storage
 

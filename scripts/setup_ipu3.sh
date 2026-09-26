@@ -41,6 +41,18 @@ for media in /dev/media*; do
     esac
     printf '%s\n' "$video" > "$runtime_file"
     chmod 0644 "$runtime_file"
+    # OV7251 defaults are too dark for a passive IR consumer on this device.
+    # These values are within the driver's advertised control ranges and can
+    # be overridden later with v4l2-ctl after the service has started.
+    for subdev in /sys/class/video4linux/v4l-subdev*; do
+        [ -r "$subdev/name" ] || continue
+        grep -q '^ov7251 ' "$subdev/name" || continue
+        node=/dev/$(basename "$subdev")
+        v4l2-ctl -d "$node" --set-ctrl exposure=1704,analogue_gain=512 \
+            2>/dev/null || true
+        printf 'setup_ipu3: controls=%s exposure=1704 analogue_gain=512\n' "$node"
+        break
+    done
     printf 'setup_ipu3: media=%s sensor=%s capture=%s\n' "$media" "$sensor" "$video"
     found_media=1
     break
