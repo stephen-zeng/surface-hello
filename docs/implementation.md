@@ -88,6 +88,12 @@ type `2` as `PMIC TPS68470`. On this machine `INT3472:02` is bound to
 the camera's clock/reset/power GPIO consumers, while `/sys/class/leds`
 contains only privacy LEDs and no flash, torch, or `ir_flood` endpoint.
 
+Upstream `intel_skl_int3472_discrete` maps ACPI GPIO type `0x02` (strobe) to
+an `ir_flood` LED. The Surface Pro 4 `SKC2` `_DSM` returns only `0x01004F0C`
+(clock enable) and `0x01005000` (reset); it has no type `0x02` strobe entry.
+This is direct ACPI evidence that the known INT3472 GPIO path is not the IR
+emitter path on this machine.
+
 This rules out treating the Windows package's generic TPS68470 flash symbols
 as a verified control path for this Surface Pro 4. The two ACPI GPIOs are
 camera power sequencing resources; they are not an identified IR emitter
