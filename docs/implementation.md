@@ -94,6 +94,14 @@ identify the Pro 4 emitter's GPIO, I2C device, or sensor-strobe wiring:
 Surface-specific flash resource is present in the package. These strings are
 therefore implementation clues, not a Linux control recipe.
 
+The referenced linux-surface issue is explicitly labelled for Surface Book 2.
+Its dump reports changing `0x3b8e`/`0x3b8f`, while the discussion questions
+whether those changes drive that platform's LED; a separate comment reports a
+very dim sensor-strobe response on Surface Go 2. The issue also notes that the
+sensor must be streaming for the strobe-related access to work. None of these
+observations identifies the Pro 4 wiring, so they remain comparative evidence
+only.
+
 ## IR emitter investigation
 
 On this Surface Pro 4, the DSDT identifies the OV7251 as `INT347E`/`CAM3` at
