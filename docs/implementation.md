@@ -327,6 +327,14 @@ confirms the daemon initialised TPM-backed encryption; there is no enrolled
 face template yet, so encrypted-template storage and recovery have not been
 tested with user data.
 
+The Gaze source loads and unseals the existing DEK when both sealed blobs are
+present. On this machine `/var/lib/gaze/tpm` is root-owned mode `0700`, and
+`dek.pub`/`dek.priv` are root-owned mode `0600`. Both blobs retained their
+10:26 creation/modification time across the 22:20 `gazed` restart, whose log
+again confirmed template encryption. This verifies reuse of the persistent
+TPM-sealed key across a daemon restart. It does not verify an enrolled template
+or a recovery path after TPM reset/replacement.
+
 The current installation references `pam_gaze.so` in `common-auth`, a direct
 `polkit-1` entry, and `gdm-face`; GDM's dconf override requests face
 authentication. `common-auth` still includes `pam_unix.so` after Gaze, but
