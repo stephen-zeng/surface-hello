@@ -157,6 +157,13 @@ bridge and left no archive. A controlled bridge process kill incremented
 systemd's restart count from 0 to 1; a new process then delivered 30 distinct
 GREY frames. This validates process recovery, not every possible input fault.
 
+The capture tool now checks the six reserved bits at the end of every 25-pixel
+`ip3y` group before hashing frames. A 60-frame live CIO2 capture checked
+`60 * 480 * 26 = 748,800` reserved bytes and found zero non-zero masks; all
+60 packed-frame hashes were distinct, with source timestamps corresponding to
+30.005 fps. The check is a packing-integrity guard only. It does not measure
+illumination, identify an emitter, or prove frame-level synchronization.
+
 The extracted 2016 Windows package gives a more specific software-side clue:
 `IntelCameraPlugin64.dll` identifies this module as `OV7251`, `MSHW0072`,
 `MONO IR` and exports `IAdvCIFlashControl`; `iacamera64.sys` contains

@@ -152,6 +152,30 @@ def parse_frames(log, frame_count, frame_size):
     return records
 
 
+def packed_padding_stats(payload, frame_count, fmt):
+    """Check the six reserved bits at the end of every ip3y group."""
+    groups = (fmt["width"] + 24) // 25
+    group_bytes = groups * 32
+    if fmt["stride"] < group_bytes:
+        raise RuntimeError(f"ip3y stride is shorter than packed groups: {fmt}")
+    nonzero = 0
+    maximum = 0
+    checked = 0
+    frame_size = fmt["frame_size"]
+    for frame_index in range(frame_count):
+        frame_start = frame_index * frame_size
+        for row in range(fmt["height"]):
+            row_start = frame_start + row * fmt["stride"]
+            for group in range(groups):
+                reserved = payload[row_start + group * 32 + 31] & 0xfc
+                checked += 1
+                if reserved:
+                    nonzero += 1
+                    maximum = max(maximum, reserved)
+    return {"checked_bytes": checked, "nonzero_bytes": nonzero,
+            "max_reserved_mask": maximum}
+
+
 def interrupted(signum, _frame):
     raise CaptureInterrupted(f"received signal {signum}")
 
@@ -209,6 +233,12 @@ def main():
                 with raw.open("rb") as stream, mmap.mmap(
                     stream.fileno(), 0, access=mmap.ACCESS_READ
                 ) as payload:
+                    padding = packed_padding_stats(payload, args.frames, fmt)
+                    if padding["nonzero_bytes"]:
+                        raise RuntimeError(
+                            "unexpected non-zero ip3y reserved bits: "
+                            f"{padding}"
+                        )
                     for record in records:
                         start = record["index"] * fmt["frame_size"]
                         frame = payload[start:start + fmt["frame_size"]]
@@ -238,6 +268,7 @@ def main():
                     ) if intervals else None,
                     "illumination_state": "not_measured",
                     "depth_or_pad_verified": False,
+                    "ip3y_padding": padding,
                 }
                 (scratch / "manifest.json").write_text(
                     json.dumps(summary, indent=2, sort_keys=True) + "\n"
