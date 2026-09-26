@@ -23,6 +23,7 @@
 #define DEFAULT_OUTPUT "/dev/video42"
 #define RUNTIME_INPUT "/run/surface_ir_bridge_dev"
 #define BUFFER_COUNT 4
+#define PACKED_STRIDE (((WIDTH + 24) / 25) * 32)
 
 static volatile sig_atomic_t running = 1;
 
@@ -84,9 +85,8 @@ static const char *runtime_input(void) {
     return path[0] ? path : DEFAULT_INPUT;
 }
 
-/* ip3y stores 25 ten-bit pixels in each 32-byte group. Six bytes of the
- * nominal 32-byte group are padding after the 24th pixel; do not treat a
- * whole scanline as one continuous bitstream. */
+/* ip3y stores 25 ten-bit pixels in each 32-byte group, with six padding
+ * bits in the last byte. Do not treat a whole scanline as one bitstream. */
 static void unpack_line(const uint8_t *packed, uint8_t *grey, size_t stride) {
     for (unsigned x = 0; x < WIDTH; ++x) {
         unsigned group = x / 25;
@@ -199,8 +199,11 @@ int main(int argc, char **argv) {
         goto fail;
     }
     size_t stride = input_format.fmt.pix_mp.plane_fmt[0].bytesperline;
-    if (stride < (WIDTH * 10 + 7) / 8)
-        stride = (WIDTH * 10 + 7) / 8;
+    if (stride < PACKED_STRIDE || stride > SIZE_MAX / HEIGHT) {
+        fprintf(stderr, "surface-ir-bridge: invalid ip3y stride: %zu\n", stride);
+        goto fail;
+    }
+    size_t packed_frame_size = stride * HEIGHT;
 
     struct v4l2_format output_format = {0};
     output_format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
@@ -225,8 +228,13 @@ int main(int argc, char **argv) {
     request.count = BUFFER_COUNT;
     request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     request.memory = V4L2_MEMORY_MMAP;
-    if (ioctl(in_fd, VIDIOC_REQBUFS, &request) < 0 || request.count < 2) {
+    if (ioctl(in_fd, VIDIOC_REQBUFS, &request) < 0) {
         perror("surface-ir-bridge: input REQBUFS");
+        goto fail;
+    }
+    if (request.count < 2 || request.count > BUFFER_COUNT) {
+        fprintf(stderr, "surface-ir-bridge: unexpected input buffer count: %u\n",
+                request.count);
         goto fail;
     }
     struct mapped_buffer buffers[BUFFER_COUNT] = {0};
@@ -240,6 +248,10 @@ int main(int argc, char **argv) {
         buffer.m.planes = &plane;
         if (ioctl(in_fd, VIDIOC_QUERYBUF, &buffer) < 0)
             goto fail_buffers;
+        if (plane.length < packed_frame_size) {
+            fprintf(stderr, "surface-ir-bridge: input buffer %u is too small\n", i);
+            goto fail_buffers;
+        }
         buffers[i].length = plane.length;
         buffers[i].addr = mmap(NULL, plane.length, PROT_READ | PROT_WRITE,
                                MAP_SHARED, in_fd, plane.m.mem_offset);
@@ -262,6 +274,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "surface-ir-bridge: %s -> %s, stride=%zu%s\n", input,
             output, stride, debug ? " (debug)" : "");
 
+    int status = 0;
     while (running) {
         struct pollfd pollfd = {.fd = in_fd, .events = POLLIN};
         int ready = poll(&pollfd, 1, 3000);
@@ -272,6 +285,7 @@ int main(int argc, char **argv) {
                 perror("surface-ir-bridge: poll");
             else
                 fprintf(stderr, "surface-ir-bridge: input timeout\n");
+            status = 1;
             break;
         }
 
@@ -285,19 +299,33 @@ int main(int argc, char **argv) {
             if (errno == EINTR || errno == EAGAIN)
                 continue;
             perror("surface-ir-bridge: DQBUF");
+            status = 1;
             break;
         }
-        const uint8_t *packed = buffers[buffer.index].addr;
+        if (buffer.index >= request.count ||
+            plane.data_offset > plane.bytesused ||
+            plane.bytesused - plane.data_offset < packed_frame_size ||
+            plane.bytesused > buffers[buffer.index].length) {
+            fprintf(stderr, "surface-ir-bridge: incomplete input frame\n");
+            status = 1;
+            break;
+        }
+        const uint8_t *packed = (const uint8_t *)buffers[buffer.index].addr +
+                                plane.data_offset;
         for (unsigned y = 0; y < HEIGHT; ++y)
             unpack_line(packed + y * stride, frame + y * WIDTH, stride);
         int brightness = frame_brightness(frame, WIDTH * HEIGHT);
         if (debug)
             fprintf(stderr, "surface-ir-bridge: frame=%u brightness=%d\n",
                     buffer.sequence, brightness);
-        if (brightness >= min_brightness && write_full(out_fd, frame, WIDTH * HEIGHT) < 0)
+        if (brightness >= min_brightness && write_full(out_fd, frame, WIDTH * HEIGHT) < 0) {
             perror("surface-ir-bridge: loopback write");
+            status = 1;
+            break;
+        }
         if (ioctl(in_fd, VIDIOC_QBUF, &buffer) < 0) {
             perror("surface-ir-bridge: QBUF");
+            status = 1;
             break;
         }
     }
@@ -307,7 +335,7 @@ int main(int argc, char **argv) {
         munmap(buffers[i].addr, buffers[i].length);
     close(out_fd);
     close(in_fd);
-    return 0;
+    return status;
 
 fail_stream:
     ioctl(in_fd, VIDIOC_STREAMOFF, &type);
