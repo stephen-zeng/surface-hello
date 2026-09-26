@@ -70,6 +70,30 @@ emitter definition.
 The kernel exposes privacy LEDs, but no `ir_flood` LED or V4L2 flash control.
 Thus neither of these two GPIOs is evidence of an emitter control line.
 
+## ACPI control-logic resolution (2026-09-26)
+
+The live ACPI dump resolves the dependency chain for this exact machine:
+
+```text
+CAM3 (INT347E, MSHW0072, OV7251 at 0x60)
+  _DEP -> SKC2 (INT3472, UID 2)
+  SKC2 CLDB -> version 0, control_logic_type 1 (DISCRETE), id 2, SKU 0x20
+  SKC2 GPIOs -> pin 0x4f / type 0x0c (clock enable)
+                 pin 0x50 / type 0x00 (reset)
+```
+
+The kernel header defines control-logic type `1` as `DISCRETE(CRD-D)` and
+type `2` as `PMIC TPS68470`. On this machine `INT3472:02` is bound to
+`int3472-discrete`, not the TPS68470 backend. The live GPIO debug output shows
+the camera's clock/reset/power GPIO consumers, while `/sys/class/leds`
+contains only privacy LEDs and no flash, torch, or `ir_flood` endpoint.
+
+This rules out treating the Windows package's generic TPS68470 flash symbols
+as a verified control path for this Surface Pro 4. The two ACPI GPIOs are
+camera power sequencing resources; they are not an identified IR emitter
+interface. Active illumination still requires a separate hardware trace,
+Windows runtime trace, or direct optical/electrical observation.
+
 The DSDT also contains an `MSHW0085` device (`CWHD`) without a resource or
 control method in that device declaration. Microsoft's `Surface Camera Windows
 Hello` package for `ACPI\MSHW0085` (Update Catalog ID
@@ -105,6 +129,15 @@ camera stack has generic flash-controller support. It still does not prove
 that this Pro 4 routes its emitter through TPS68470, nor does it provide a
 safe Linux GPIO, I2C address, or register sequence. No such values are used by
 this project.
+
+The Intel AVStream binary adds the same architectural clue: it has a
+`FlashControllerDriverProxy`, `PMIC FLASH Driver`, `Trigger IR Flash`,
+`IRRollingShutterFlashController::SetStrobePattern`, and a
+`flash_gpio_pin` configuration field. This indicates that Windows expected a
+separate flash-controller device and carried the trigger metadata through the
+camera pipeline. The package still contains no Surface-Pro-4-specific binding
+from that proxy to an emitter, so it is not enough to implement a Linux
+backend.
 
 Additional upstream evidence is available in linux-surface issue #739
 (`cameras/ov7251: Register dump for strobe`). The dump was captured from
