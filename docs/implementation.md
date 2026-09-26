@@ -97,6 +97,15 @@ no corresponding flash control. The next investigation is to identify the
 Windows driver's actual trigger and frame metadata behavior before adding a
 Linux emitter backend.
 
+Static strings in the same package provide a narrower clue: `ov7251.sys`
+contains the sensor-side modes `Strobe`, `Torch`, and `Flash`, while
+`SkcController.sys` contains `TPS68470` flash methods for both strobe and I2C
+command operation, plus GPIO operations. This confirms that the Windows
+camera stack has generic flash-controller support. It still does not prove
+that this Pro 4 routes its emitter through TPS68470, nor does it provide a
+safe Linux GPIO, I2C address, or register sequence. No such values are used by
+this project.
+
 Additional upstream evidence is available in linux-surface issue #739
 (`cameras/ov7251: Register dump for strobe`). The dump was captured from
 Windows on a Surface Book 2, not this Surface Pro 4, and the discussion says
