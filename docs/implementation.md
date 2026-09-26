@@ -172,6 +172,16 @@ an `ir_flood` LED. The Surface Pro 4 `SKC2` `_DSM` returns only `0x01004F0C`
 This is direct ACPI evidence that the known INT3472 GPIO path is not the IR
 emitter path on this machine.
 
+The other two live `INT3472` devices were also checked in the same DSDT.
+The front RGB `CAMF` (OV5693, `MSHW0070`) depends on `SKC1` (UID 1), whose
+`_DSM` GPIO entries are `0x0100540C`, `0x01004D00`, and `0x0100160D`.
+The rear RGB `CAMR` (OV8865, `MSHW0071`) depends on `SKC0` (UID 0), whose
+entries are `0x0100530C`, `0x01004E00`, and `0x01002B0D`. The live ACPI bus
+lists exactly `INT3472:00`, `:01`, and `:02`; none of their declared GPIO
+functions is type `0x02` (strobe). This narrows the ACPI evidence to all
+three controllers, but does not identify the emitter or exclude a separate
+control path.
+
 This rules out treating the Windows package's generic TPS68470 flash symbols
 as a verified control path for this Surface Pro 4. The two ACPI GPIOs are
 camera power sequencing resources; they are not an identified IR emitter
