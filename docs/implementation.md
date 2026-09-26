@@ -71,6 +71,20 @@ Windows camera driver and its frame metadata next. A Windows trace or direct
 emitter observation is still needed to establish control and timing before
 active/ambient frame pairs or depth cues can be produced by this bridge.
 
+The 2016 Intel camera package listed as `Microsoft IR Camera Front` in the
+Microsoft Update Catalog (update `f2ed5505-374c-4a30-8c96-138f6bc73fa3`)
+is more specific to this device. Its `ov7251.inf` matches `INT347E` with
+subsystem `MSHW0072` and installs `OV7251_MSHW0072_SKY.cpf` plus a matching
+pipeline configuration. It also installs `SkcController.sys` for `INT3472`
+and `iacamera64.sys` for the Intel AVStream camera. The latter binary contains
+`IRFlashLedIntensity`, `TriggerRollingShutterIRByCIO2`, and
+`IRRollingShutterFlashController` identifiers. These are evidence of an Intel
+IR flash control path, but do not establish which signal drives this Surface's
+emitter or the register sequence. The current Linux IPU3 CIO2 driver exposes
+no corresponding flash control. The next investigation is to identify the
+Windows driver's actual trigger and frame metadata behavior before adding a
+Linux emitter backend.
+
 ## Gaze configuration order
 
 First validate RGB enrollment and `gaze auth`. Then make a timestamped backup
