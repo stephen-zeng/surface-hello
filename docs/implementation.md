@@ -478,3 +478,61 @@ reports TPM 2.0. `gazed` logs `Template encryption enabled (AES-256-GCM under a
 TPM-sealed key)` after its current start. This confirms daemon initialization
 and key-material permissions, but not encrypted user-template storage,
 recovery after TPM replacement, or face authentication.
+
+## Active IR emitter integration (2026-09-27)
+
+The earlier snapshots above intentionally record the state before an emitter
+backend existed. The current Gaze test installation includes the patch in
+`patches/gaze-surface-pro4-ir-emitter.patch`, based on upstream Gaze commit
+`da99c32` (`gaze 0.3.3`). The patch adds a hardware-specific backend to
+`gaze-core/src/ir/led.rs`; it is selected only when all of these are true:
+
+* the configured IR node is a real `/dev/videoN` node;
+* `/run/surface_ir_bridge_dev` identifies an existing source node using the
+  `ipu3-cio2` driver;
+* `INT347E:00` reports the `ov7251` driver; and
+* `/dev/i2c-3` exists.
+
+For this Surface Pro 4 the backend selects I2C address `0x60` and writes the
+OV7251 register `0x3005`: `0x08` enables the emitter and `0x00` disables it.
+Gaze's existing `EmitterGuard` now owns the lifetime: it enables the emitter
+when an IR enrollment or authentication thread starts, and disables it on
+success, failure, cancellation, or thread cleanup.
+
+To reproduce the source build without storing the full Gaze checkout here:
+
+```sh
+git clone https://github.com/GunduLabs/gaze.git /tmp/gaze-source
+cd /tmp/gaze-source
+git checkout da99c32
+git apply /path/to/surface-hello/patches/gaze-surface-pro4-ir-emitter.patch
+cargo build -p gaze --release --bin gazed
+```
+
+The test installation backed up `/usr/bin/gazed`, installed the resulting
+release binary, kept `encrypt_templates = true`, and set
+`emitter_enabled = true`. `gazed` and `surface-ir-camera.service` are active.
+The daemon journal recorded:
+
+```text
+IR emitter enabled via Surface Pro 4 OV7251 IR emitter (I2C) on /dev/video42
+```
+
+Direct hardware checks measured register readback `0x00` with the emitter off
+and `0x08` after the on command. A 30-frame bridge sample changed from roughly
+9 mean luma (off) to roughly 35 mean luma (on), then returned to `0x00` after
+cleanup. Gaze enrollment of the `active-ir` template ran with
+`run_rgb: false, run_ir: true`, saved five IR captures, and returned the
+register to `0x00`. Direct `gaze auth -u stephenzeng -v` succeeded, and the
+GNOME lock-screen face authentication path also unlocked successfully.
+
+The GNOME extension package `gaze-gnome-extension 0.3.3-1~debian13` is
+installed. The extension ID `gaze@gundulabs.com` is enabled for the user and
+`enable-face-authentication` is true. A logout/login was required for the
+Wayland GNOME Shell to rescan the system extension directory.
+
+The current `active-ir` template was enrolled while `rgb = ""` so that the
+broken `/dev/video6` RGB path could not abort enrollment before the IR thread
+started. Restore `rgb = "primary"` for normal configuration after the IR-only
+test; the existing IR template remains usable. The RGB path still needs a
+separate format/media-graph fix before creating a combined RGB+IR template.
