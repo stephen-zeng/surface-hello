@@ -7,8 +7,10 @@ infrared camera and setup notes for using it with Gaze. The tested path is:
 OV7251 -> IPU3/CIO2 -> Surface IR bridge -> /dev/video42 -> Gaze
 ```
 
-The bridge exposes a 640x480 GREY stream. The companion [Surface Gaze fork](https://github.com/stephen-zeng/surface-gaze)
-adds the verified Surface Pro 4 I2C emitter control used by `emitter_enabled`.
+The bridge rotates the Surface Pro 4 sensor image 90 degrees counterclockwise
+and exposes a 480x640 GREY stream. The companion
+[Surface Gaze fork](https://github.com/stephen-zeng/surface-gaze) adds the
+verified Surface Pro 4 I2C emitter control used by `emitter_enabled`.
 This setup has been tested on this Surface Pro 4; other Surface models and
 OV7251 platforms need their own hardware validation.
 
@@ -37,6 +39,7 @@ Build and install the bridge from this repository:
 
 ```sh
 make
+make test
 sudo make install
 sudo systemctl daemon-reload
 sudo systemctl enable --now surface-ir-camera.service
@@ -49,12 +52,15 @@ cat /run/surface_ir_bridge_dev
 v4l2-ctl -d /dev/video42 --all
 journalctl -u surface-ir-camera.service -b --no-pager
 gst-launch-1.0 -q v4l2src device=/dev/video42 num-buffers=1 \
-  ! video/x-raw,format=GRAY8,width=640,height=480 ! fakesink
+  ! video/x-raw,format=GRAY8,width=480,height=640 ! fakesink
 ```
 
 The source device number can change between boots; the service discovers it
 and records it in `/run/surface_ir_bridge_dev`. The Gaze backend recognizes the
 bridge output by `/dev/video42` and its `Surface IR Camera` device name.
+If you enrolled a face with the older unrotated 640x480 bridge, re-test
+authentication after updating; the changed frame orientation may require a
+new enrollment.
 
 ## Build the Surface Gaze daemon
 

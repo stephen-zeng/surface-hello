@@ -26,8 +26,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", default="/dev/video42")
     parser.add_argument("--frames", type=positive_int, default=120)
-    parser.add_argument("--width", type=positive_int, default=640)
-    parser.add_argument("--height", type=positive_int, default=480)
+    parser.add_argument("--width", type=positive_int, default=480)
+    parser.add_argument("--height", type=positive_int, default=640)
     parser.add_argument("--timeout", type=positive_int, default=30)
     args = parser.parse_args()
 

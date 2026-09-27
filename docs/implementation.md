@@ -37,12 +37,12 @@ cat /run/surface_ir_bridge_dev
 v4l2-ctl -d /dev/video42 --all
 journalctl -u surface-ir-camera.service -b
 gst-launch-1.0 -q v4l2src device=/dev/video42 num-buffers=1 \
-  ! video/x-raw,format=GRAY8,width=640,height=480 ! fakesink
+  ! video/x-raw,format=GRAY8,width=480,height=640 ! fakesink
 ```
 
-The bridge converts IPU3 packed 10-bit monochrome to 8-bit `GREY`. It does
-not write OV7251 registers or GPIOs: this machine has no verified Linux IR
-emitter control endpoint. `emitter_enabled` must therefore remain `false`.
+The bridge converts 640x480 IPU3 packed monochrome to 480x640 `GREY`, rotating
+the image 90 degrees counterclockwise. It does not control the IR emitter;
+the separately verified Gaze I2C profile handles that operation.
 The setup script applies the OV7251 driver's advertised maximum exposure and
 a conservative analogue gain (`1704` and `512`); adjust them with `v4l2-ctl`
 if a different lighting environment needs it.
@@ -80,10 +80,10 @@ means the register values remain unverified on this machine; the project must
 not turn the upstream mode-table values or another Surface model's dump into a
 write sequence.
 
-The latest passive capture produced two `640x480` GREY frames with payload
+The pre-rotation-fix passive capture produced two `640x480` GREY frames with payload
 statistics of min `0`, max `255`, mean `48.759` for both frames. Their absolute
 difference was zero. This confirms a valid, stable passive stream under the
-current setup, but it is not an active/ambient result and says nothing about
+then-current setup, but it is not an active/ambient result and says nothing about
 emitter state, depth, or liveness.
 
 A follow-up continuous-stream check captured 120 frames from `/dev/video42`.
@@ -112,7 +112,7 @@ stream. Send `SIGUSR1` to its systemd `MainPID` before and after a capture:
 pid=$(systemctl show -P MainPID surface-ir-camera.service)
 sudo kill -USR1 "$pid"
 gst-launch-1.0 -q v4l2src device=/dev/video42 num-buffers=120 \
-  ! video/x-raw,format=GRAY8,width=640,height=480 ! fakesink
+  ! video/x-raw,format=GRAY8,width=480,height=640 ! fakesink
 sudo kill -USR1 "$pid"
 sudo journalctl -u surface-ir-camera.service -b --no-pager | grep 'stats input='
 ```
@@ -402,8 +402,9 @@ works reliably and the keyring password has been enrolled interactively.
 ## Verification on the reference Surface Pro 4
 
 On 2026-09-26 the installed service was active and reported `/dev/video2` as
-the current CIO2 input. The bridge exposed 640x480 `GREY` with a 307200-byte
-frame size on `/dev/video42`. `capture_ir_pair.sh` successfully saved two
+the current CIO2 input. Before the rotation was restored, that bridge exposed
+640x480 `GREY` frames (307,200 bytes each) on `/dev/video42`.
+`capture_ir_pair.sh` successfully saved two
 consecutive frames and a PGM absolute-difference image; the observed
 difference was zero while no emitter command was supplied.
 

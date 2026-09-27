@@ -41,9 +41,9 @@ make_pgm() {
 import pathlib
 import sys
 raw = pathlib.Path(sys.argv[1]).read_bytes()
-if len(raw) != 640 * 480:
+if len(raw) != 480 * 640:
     raise SystemExit(f"unexpected GREY frame length: {len(raw)}")
-pathlib.Path(sys.argv[2]).write_bytes(b"P5\n640 480\n255\n" + raw)
+pathlib.Path(sys.argv[2]).write_bytes(b"P5\n480 640\n255\n" + raw)
 PY
 }
 
@@ -112,10 +112,10 @@ import pathlib
 import sys
 on = pathlib.Path(sys.argv[1]).read_bytes()
 off = pathlib.Path(sys.argv[2]).read_bytes()
-if len(on) != len(off) or len(on) != 640 * 480:
+if len(on) != len(off) or len(on) != 480 * 640:
     raise SystemExit("input frames have different or invalid sizes")
 diff = bytes(abs(a - b) for a, b in zip(on, off))
-pathlib.Path(sys.argv[3]).write_bytes(b"P5\n640 480\n255\n" + diff)
+pathlib.Path(sys.argv[3]).write_bytes(b"P5\n480 640\n255\n" + diff)
 PY
 
 printf 'capture_ir_pair: mode=%s on=%s-on.pgm off=%s-off.pgm diff=%s-diff.pgm\n' \

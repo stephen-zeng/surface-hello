@@ -17,8 +17,12 @@
 
 #include <linux/videodev2.h>
 
+#include "rotation.h"
+
 #define WIDTH 640
 #define HEIGHT 480
+#define OUTPUT_WIDTH HEIGHT
+#define OUTPUT_HEIGHT WIDTH
 #define INPUT_FOURCC v4l2_fourcc('i', 'p', '3', 'y')
 #define DEFAULT_INPUT "/dev/video2"
 #define DEFAULT_OUTPUT "/dev/video42"
@@ -73,7 +77,7 @@ static void usage(const char *program) {
     fprintf(stderr,
             "Usage: %s [--input PATH] [--output PATH] [--min-brightness N]\n"
             "       %s [--debug]\n\n"
-            "Reads IPU3 ip3y (10-bit packed) and writes GREY frames.\n"
+            "Reads 640x480 IPU3 ip3y and writes 480x640 rotated GREY frames.\n"
             "Send SIGUSR1 to print cumulative source-frame statistics.\n",
             program, program);
 }
@@ -241,20 +245,20 @@ int main(int argc, char **argv) {
 
     struct v4l2_format output_format = {0};
     output_format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-    output_format.fmt.pix.width = WIDTH;
-    output_format.fmt.pix.height = HEIGHT;
+    output_format.fmt.pix.width = OUTPUT_WIDTH;
+    output_format.fmt.pix.height = OUTPUT_HEIGHT;
     output_format.fmt.pix.pixelformat = V4L2_PIX_FMT_GREY;
     output_format.fmt.pix.field = V4L2_FIELD_NONE;
-    output_format.fmt.pix.bytesperline = WIDTH;
-    output_format.fmt.pix.sizeimage = WIDTH * HEIGHT;
+    output_format.fmt.pix.bytesperline = OUTPUT_WIDTH;
+    output_format.fmt.pix.sizeimage = OUTPUT_WIDTH * OUTPUT_HEIGHT;
     if (ioctl(out_fd, VIDIOC_S_FMT, &output_format) < 0) {
         perror("surface-ir-bridge: output S_FMT");
         goto fail;
     }
     if (output_format.fmt.pix.pixelformat != V4L2_PIX_FMT_GREY ||
-        output_format.fmt.pix.width != WIDTH ||
-        output_format.fmt.pix.height != HEIGHT) {
-        fprintf(stderr, "surface-ir-bridge: output does not support 640x480 GREY\n");
+        output_format.fmt.pix.width != OUTPUT_WIDTH ||
+        output_format.fmt.pix.height != OUTPUT_HEIGHT) {
+        fprintf(stderr, "surface-ir-bridge: output does not support 480x640 GREY\n");
         goto fail;
     }
 
@@ -300,7 +304,7 @@ int main(int argc, char **argv) {
         perror("surface-ir-bridge: STREAMON");
         goto fail_buffers;
     }
-    uint8_t *frame = malloc(WIDTH * HEIGHT);
+    uint8_t *frame = malloc(OUTPUT_WIDTH * OUTPUT_HEIGHT);
     if (!frame) {
         perror("surface-ir-bridge: frame allocation");
         goto fail_stream;
@@ -366,16 +370,19 @@ int main(int argc, char **argv) {
             ++stats.flagged_errors;
         const uint8_t *packed = (const uint8_t *)buffers[buffer.index].addr +
                                 plane.data_offset;
-        for (unsigned y = 0; y < HEIGHT; ++y)
-            unpack_line(packed + y * stride, frame + y * WIDTH, stride);
-        int brightness = frame_brightness(frame, WIDTH * HEIGHT);
+        uint8_t line[WIDTH];
+        for (unsigned y = 0; y < HEIGHT; ++y) {
+            unpack_line(packed + y * stride, line, stride);
+            rotate_ccw_line(line, frame, WIDTH, HEIGHT, y);
+        }
+        int brightness = frame_brightness(frame, OUTPUT_WIDTH * OUTPUT_HEIGHT);
         if (debug)
             fprintf(stderr,
                     "surface-ir-bridge: frame=%u timestamp=%lld.%06ld flags=0x%08x brightness=%d\n",
                     buffer.sequence, (long long)buffer.timestamp.tv_sec,
                     (long)buffer.timestamp.tv_usec, buffer.flags, brightness);
         if (brightness >= min_brightness) {
-            if (write_full(out_fd, frame, WIDTH * HEIGHT) < 0) {
+            if (write_full(out_fd, frame, OUTPUT_WIDTH * OUTPUT_HEIGHT) < 0) {
                 perror("surface-ir-bridge: loopback write");
                 status = 1;
                 break;

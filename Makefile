@@ -1,12 +1,16 @@
 CC ?= cc
 CFLAGS ?= -O2 -Wall -Wextra -Wpedantic
 
-.PHONY: all clean install
+.PHONY: all clean install test
 
 all: surface-ir-bridge
 
-surface-ir-bridge: src/surface_ir_bridge.c
+surface-ir-bridge: src/surface_ir_bridge.c src/rotation.h
 	$(CC) $(CFLAGS) -o $@ $<
+
+test: tests/rotation_test.c src/rotation.h
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	  $(CC) $(CFLAGS) -o "$$tmp/rotation_test" tests/rotation_test.c && "$$tmp/rotation_test"
 
 clean:
 	rm -f surface-ir-bridge
